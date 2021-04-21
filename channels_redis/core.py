@@ -307,9 +307,17 @@ class RedisChannelLayer(BaseChannelLayer):
             index = next(self._send_index_generator)
         async with self.connection(index) as connection:
             # Discard old messages based on expiry
-            await connection.zremrangebyscore(
+            dropped_msg_count = 0
+            dropped_msg_count = await connection.zremrangebyscore(
                 channel_key, min=0, max=int(time.time()) - int(self.expiry)
             )
+
+            if dropped_msg_count > 0:
+                logger.info(
+                    "%s messages dropped for channel %s",
+                    dropped_msg_count,
+                    channel,
+                )
 
             # Check the length of the list before send
             # This can allow the list to leak slightly over capacity, but that's fine.
@@ -649,10 +657,15 @@ class RedisChannelLayer(BaseChannelLayer):
             # Discard old messages based on expiry
 
             dropped_msg_count = 0
+            slow_channel_count = 0
             for key in channel_redis_keys:
-                dropped_msg_count += await connection.zremrangebyscore(
+                count = await connection.zremrangebyscore(
                     key, min=0, max=int(time.time()) - int(self.expiry)
                 )
+                if count > 0:
+                    dropped_msg_count += count
+                    slow_channel_count += 1
+
 
             # Create a LUA script specific for this connection.
             # Make sure to use the message specific to this channel, it is
@@ -702,10 +715,11 @@ class RedisChannelLayer(BaseChannelLayer):
                     )
                 if dropped_msg_count > 0:
                     logger.info(
-                        "%s messages dropped in %s channels of group %s",
+                        "%s messages dropped in %s channels of group %s (having %s channels in total)",
                         dropped_msg_count,
-                        len(channel_names),
+                        slow_channel_count,
                         group,
+                        len(channel_names),
                     )
 
     def _map_channel_to_connection(self, channel_names, message):
