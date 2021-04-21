@@ -642,8 +642,10 @@ class RedisChannelLayer(BaseChannelLayer):
 
         for connection_index, channel_redis_keys in connection_to_channel_keys.items():
             # Discard old messages based on expiry
+
+            dropped_msg_count = 0
             for key in channel_redis_keys:
-                await connection.zremrangebyscore(
+                dropped_msg_count += await connection.zremrangebyscore(
                     key, min=0, max=int(time.time()) - int(self.expiry)
                 )
 
@@ -690,6 +692,13 @@ class RedisChannelLayer(BaseChannelLayer):
                     logger.info(
                         "%s of %s channels over capacity in group %s",
                         channels_over_capacity,
+                        len(channel_names),
+                        group,
+                    )
+                if dropped_msg_count > 0:
+                    logger.info(
+                        "%s messages dropped in %s channels of group %s",
+                        dropped_msg_count,
                         len(channel_names),
                         group,
                     )
