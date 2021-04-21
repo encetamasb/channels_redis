@@ -119,9 +119,14 @@ class ConnectionPool:
                 await conn.wait_closed()
             del self.conn_map[loop]
 
+        found = False
         for k, v in self.in_use.items():
             if v is loop:
-                self.in_use[k] = None
+                found = True
+                break
+
+        if found:
+            self.in_use[k] = None
 
     async def close(self):
         """
