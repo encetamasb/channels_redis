@@ -302,9 +302,16 @@ class RedisChannelLayer(BaseChannelLayer):
             index = next(self._send_index_generator)
         async with self.connection(index) as connection:
             # Discard old messages based on expiry
-            await connection.zremrangebyscore(
+            dropped_msg_count = 0
+            dropped_msg_count = await connection.zremrangebyscore(
                 channel_key, min=0, max=int(time.time()) - int(self.expiry)
             )
+
+            if dropped_msg_count > 0:
+                logger.info(
+                    "dropped %s expired messages",
+                    dropped_msg_count,
+                )
 
             # Check the length of the list before send
             # This can allow the list to leak slightly over capacity, but that's fine.
@@ -642,8 +649,10 @@ class RedisChannelLayer(BaseChannelLayer):
 
         for connection_index, channel_redis_keys in connection_to_channel_keys.items():
             # Discard old messages based on expiry
+
+            dropped_msg_count = 0
             for key in channel_redis_keys:
-                await connection.zremrangebyscore(
+                dropped_msg_count += await connection.zremrangebyscore(
                     key, min=0, max=int(time.time()) - int(self.expiry)
                 )
 
@@ -692,6 +701,11 @@ class RedisChannelLayer(BaseChannelLayer):
                         channels_over_capacity,
                         len(channel_names),
                         group,
+                    )
+                if dropped_msg_count > 0:
+                    logger.info(
+                        "dropped %s expired messages",
+                        dropped_msg_count,
                     )
 
     def _map_channel_to_connection(self, channel_names, message):
